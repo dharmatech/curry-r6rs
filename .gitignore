@@ -1,0 +1,5 @@
+# Chez Scheme compiled libraries and programs
+*.so
+*.wpo
+# Curry's bytecode cache
+*.scc
