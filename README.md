@@ -8,7 +8,7 @@ The question this project explores: does Curry's math code need to be C? If a pl
 
 | Library | Ported from | Status |
 |---|---|---|
-| `(curry-r6rs multivector)` | `src/multivec.c` | done |
+| `(curry-r6rs multivector)` | `src/multivec.c` | done, benchmarked |
 
 ### `(curry-r6rs multivector)`
 
@@ -61,6 +61,23 @@ Differences from Curry's built-in version:
 - No custom printer, since R6RS has no portable way to define one. Use `multivector->list`.
 
 Otherwise the products use the same algorithm as Curry's C code. `tests/differential.sh` runs every operation on both and compares the results exactly, including the sign of zero. They match bit for bit against a Curry built without FMA contraction, which is GCC's x86-64 default. Where the C compiler fuses multiply-adds (arm64, or `-march=native`), the last bit of some results differs. NaN sign and payload also may differ, since IEEE 754 leaves them unspecified.
+
+## Results
+
+Measured 2026-11-12 on an Intel Core i9-10885H running Linux. Chez Scheme 10.4.1 ran `(curry-r6rs multivector)`; Curry 1.30.1 (Release build, GCC `-O2`, no JIT) ran its built-in C multivectors. Each figure is the best of 5 runs, per operation. The raw output is in [`bench/results/`](bench/results/). All three runs print identical checksums, and `tests/differential.sh` confirms they compute the same bits.
+
+| Workload | Curry (C) | Chez | Chez, optimize-level 3 |
+|---|---|---|---|
+| Geometric product, Cl(3,0,0), 8 coefficients | 0.68 µs | 1.47 µs (2.2× slower) | 0.99 µs (1.5× slower) |
+| Geometric product, Cl(4,1,0), 32 coefficients | 9.4 µs | 49 µs (5.2× slower) | 35 µs (3.7× slower) |
+| Geometric product, Cl(8,0,0), 256 coefficients | 1.17 ms | 4.3 ms (3.7× slower) | 3.3 ms (2.8× slower) |
+| Rotate a vector by a rotor, Cl(3,0,0) | 1.20 µs | 0.89 µs (1.35× faster) | 0.58 µs (2.1× faster) |
+
+What the numbers say:
+
+- **A large product is almost all inner loop, and there C is 2–5× faster** than the same algorithm on Chez. Chez isn't allocating inside that loop (a product allocates only its result), and inlining the blade product by hand changed nothing. The gap is in how Chez compiles the bit-twiddling and data-dependent sign branches compared with GCC.
+- **The rotor workload is what application code looks like**: build a vector, apply a rotor, read the result, half a million times. Here the portable library on Chez is faster than Curry's C code. Each product is small, so the time goes to the code around it, which Chez compiles to native code while Curry runs it in its bytecode VM with every float allocated on the heap.
+- **This is a direct port of the same algorithm.** A multiplication table precomputed once per algebra would remove most of the inner-loop cost on Chez, but the C code could use one too.
 
 ## Running
 
