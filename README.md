@@ -64,20 +64,21 @@ Otherwise the products do the same floating-point arithmetic as Curry's C code, 
 
 ## Results
 
-Measured 2026-11-12 on an Intel Core i9-10885H running Linux. Chez Scheme 10.4.1 ran `(curry-r6rs multivector)`; Curry 1.30.1 (Release build, GCC `-O2`, no JIT) ran its built-in C multivectors. Each figure is the best of 5 runs, per operation. The raw output is in [`bench/results/`](bench/results/). All three runs print identical checksums, and `tests/differential.sh` confirms they compute the same bits.
+Measured 2026-11-12 on an Intel Core i9-10885H running Linux, at commit `869b9c6`. Chez Scheme 10.4.1 ran `(curry-r6rs multivector)`; Curry 1.30.1 (Release build, GCC `-O2`, no JIT) ran its built-in C multivectors. Each figure is the best of 5 runs, per operation; repeated runs vary by about 5%. The raw output is in [`bench/results/`](bench/results/). All three runs print identical checksums, and `tests/differential.sh` confirms they compute the same bits.
 
 | Workload | Curry (C) | Chez | Chez, optimize-level 3 |
 |---|---|---|---|
-| Geometric product, Cl(3,0,0), 8 coefficients | 0.68 µs | 1.47 µs (2.2× slower) | 0.99 µs (1.5× slower) |
-| Geometric product, Cl(4,1,0), 32 coefficients | 9.4 µs | 49 µs (5.2× slower) | 35 µs (3.7× slower) |
-| Geometric product, Cl(8,0,0), 256 coefficients | 1.17 ms | 4.3 ms (3.7× slower) | 3.3 ms (2.8× slower) |
-| Rotate a vector by a rotor, Cl(3,0,0) | 1.20 µs | 0.89 µs (1.35× faster) | 0.58 µs (2.1× faster) |
+| Geometric product, Cl(3,0,0), 8 coefficients | 0.70 µs | 1.52 µs (2.2× slower) | 0.84 µs (1.2× slower) |
+| Geometric product, Cl(4,1,0), 32 coefficients | 10.0 µs | 30.0 µs (3.0× slower) | 17.2 µs (1.7× slower) |
+| Geometric product, Cl(8,0,0), 256 coefficients | 1.20 ms | 2.40 ms (2.0× slower) | 1.58 ms (1.3× slower) |
+| Rotate a vector by a rotor, Cl(3,0,0) | 1.27 µs | 0.92 µs (1.4× faster) | 0.52 µs (2.4× faster) |
 
 What the numbers say:
 
-- **A large product is almost all inner loop, and there C is 2–5× faster** than the same algorithm on Chez. Chez isn't allocating inside that loop (a product allocates only its result), and inlining the blade product by hand changed nothing. The gap is in how Chez compiles the bit-twiddling and data-dependent sign branches compared with GCC.
+- **On a single large product, C is still faster**: 1.3–1.7× at optimize-level 3, 2–3× in Chez's default safe mode. A large product is almost all inner loop. Chez allocates nothing inside it, so the remaining gap is code generation. One specific piece is that Chez compiles R6RS's `fxbit-count` more slowly than its own non-standard `fxpopcount`. In a scratch experiment, swapping one for the other roughly halved the optimize-level 3 times, which suggests a patch to Chez worth investigating.
 - **The rotor workload is what application code looks like**: build a vector, apply a rotor, read the result, half a million times. Here the portable library on Chez is faster than Curry's C code. Each product is small, so the time goes to the code around it, which Chez compiles to native code while Curry runs it in its bytecode VM with every float allocated on the heap.
-- **This is a direct port of the same algorithm.** A multiplication table precomputed once per algebra would remove most of the inner-loop cost on Chez, but the C code could use one too.
+- **The first version was a line-by-line port of Curry's loop**, at commit `d113422`; [its results](bench/results/2026-11-12-X1E-d113422.txt) are kept. That loop branched on effectively random sign bits, which the CPU mispredicts about half the time. The current closed form has no such branches and cut the large products by 40–50%: Cl(8,0,0) went from 4.3 to 2.4 ms in safe mode and from 3.3 to 1.6 ms at optimize-level 3.
+- **C could use the same closed form.** In a quick standalone test, it helped C only with a hardware popcount instruction (`-mpopcnt`), which Curry's default x86-64 build doesn't use; without one, Curry's current loop is the faster choice. A multiplication table precomputed once per algebra would likewise speed up both.
 
 ## Running
 
