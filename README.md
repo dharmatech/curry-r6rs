@@ -53,12 +53,14 @@ Blades are numbered by bitmap: bit k set means generator e(k+1) is present, so t
 Differences from Curry's built-in version:
 
 - An algebra is a value you create once, instead of passing `p q r` to every constructor.
+- Up to 16 generators; Curry allows 8.
 - `list->multivector` requires exactly one coefficient per blade; Curry ignores extra or missing ones.
+- Coefficients must be real. Curry silently drops the imaginary part of a complex number.
 - `(mv+ a)` and `(mv* a)` return a copy, so the result never aliases a mutable argument.
 - No quaternion conversions, since R6RS has no quaternion type.
 - No custom printer, since R6RS has no portable way to define one. Use `multivector->list`.
 
-Otherwise the products use the same algorithm as Curry's C code, so the same inputs give bit-identical results.
+Otherwise the products use the same algorithm as Curry's C code. `tests/differential.sh` runs every operation on both and compares the results exactly, including the sign of zero. They match bit for bit against a Curry built without FMA contraction, which is GCC's x86-64 default. Where the C compiler fuses multiply-adds (arm64, or `-march=native`), the last bit of some results differs. NaN sign and payload also may differ, since IEEE 754 leaves them unspecified.
 
 ## Running
 
@@ -66,6 +68,13 @@ Requires [Chez Scheme](https://cisco.github.io/ChezScheme/) 10. From the reposit
 
 ```sh
 scheme --program tests/multivector.sps
+```
+
+These need a built Curry, by default at `~/src/curry/build-release/curry` (set `CURRY` to use another):
+
+```sh
+tests/differential.sh   # compare results with Curry's C code
+bench/run.sh            # benchmark both; results go to bench/results/
 ```
 
 ## License

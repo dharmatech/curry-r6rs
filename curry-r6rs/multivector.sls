@@ -23,7 +23,11 @@
 ;;; stored unboxed.
 ;;;
 ;;; The products use the same algorithm as Curry's C code, including skipping
-;;; zero coefficients, so for the same inputs the results agree bit for bit.
+;;; zero coefficients, so for the same inputs the results agree bit for bit
+;;; (NaN payloads aside) with a build of that code that keeps each multiply
+;;; and add separate.  A build that fuses them into FMA instructions, the
+;;; default on arm64 and with -march=native, rounds differently in the last
+;;; bit.  tests/differential.sh checks this against a real Curry binary.
 
 (library (curry-r6rs multivector)
   (export
@@ -63,9 +67,10 @@
               "signature must be non-negative with p+q+r <= 16" p q r))
           (let ((n (fx+ p (fx+ q r))))
             (new p q r n (fxarithmetic-shift-left 1 n))))))
+    ;; Generative, sealed and opaque: no other code can create, extend or
+    ;; inspect these records, so every algebra went through the checks above.
     (sealed #t)
-    (opaque #t)
-    (nongenerative curry-r6rs:algebra))
+    (opaque #t))
 
   ;; Two algebras with the same signature are interchangeable.
   (define (same-algebra? a b)
@@ -81,8 +86,7 @@
     (fields (immutable algebra multivector-algebra)
             (immutable coefficients coefficients))
     (sealed #t)
-    (opaque #t)
-    (nongenerative curry-r6rs:multivector))
+    (opaque #t))
 
   (define-syntax cref
     (syntax-rules ()
@@ -328,7 +332,7 @@
   ;; One argument returns a fresh copy, so the result never aliases an input.
   (define mv+
     (case-lambda
-      ((a) (multivector-copy a))
+      ((a) (check-mv 'mv+ a) (multivector-copy a))
       ((a b) (add2 a b))
       ((a b . rest) (fold-left add2 (add2 a b) rest))))
 
@@ -342,7 +346,7 @@
   ;; Left-associative: (mv* a b c) is (a b) c.
   (define mv*
     (case-lambda
-      ((a) (multivector-copy a))
+      ((a) (check-mv 'mv* a) (multivector-copy a))
       ((a b) (geometric2 a b))
       ((a b . rest) (fold-left geometric2 (geometric2 a b) rest))))
 
@@ -381,8 +385,8 @@
   ;; Projections and norms
 
   ;; Right complement: a times the reverse of the pseudoscalar e1...en.  In a
-  ;; degenerate algebra (r > 0) the pseudoscalar squares to 0, so this is the
-  ;; metric dual and not the Poincare/Hodge dual that PGA usually wants.
+  ;; degenerate algebra (r > 0) every blade containing a null generator maps
+  ;; to zero, so this is not the Poincare/Hodge dual that PGA usually wants.
   (define (mv-dual a)
     (check-mv 'mv-dual a)
     (let* ((alg (multivector-algebra a))
@@ -416,9 +420,11 @@
     (cref (coefficients (geometric2 (mv-reverse a) a)) 0))
 
   (define (mv-norm a)
+    (check-mv 'mv-norm a)
     (flsqrt (flabs (mv-norm2 a))))
 
   (define (mv-normalize a)
+    (check-mv 'mv-normalize a)
     (let ((n2 (mv-norm2 a)))
       (when (fl=? n2 0.0)
         (assertion-violation 'mv-normalize "multivector has zero norm" a))

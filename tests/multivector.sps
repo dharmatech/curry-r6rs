@@ -3,7 +3,9 @@
 ;;;
 ;;; The first section ports the multivector checks from Curry's
 ;;; tests/numeric_ext_tests.scm (all except printing and the quaternion
-;;; round trip, which have no R6RS counterpart).  The rest are new.
+;;; round trip, which have no R6RS counterpart).  Two of Curry's checks
+;;; compared only the scalar part, which is 0 whatever the sign; those now
+;;; compare whole multivectors.  The rest are new.
 ;;;
 ;;; Run from the repository root:  scheme --program tests/multivector.sps
 
@@ -58,6 +60,10 @@
     (report (and (= (length la) (length lb)) (for-all = la lb))
             label (list 'got la 'expected lb))))
 
+;; Exact per coefficient, including the sign of zero.
+(define (check-eqv label actual expected)
+  (report (eqv? actual expected) label (list 'got actual 'expected expected)))
+
 ;;; ---------------------------------------------------------------------------
 ;;; Ported from Curry: Cl(3,0,0)
 
@@ -84,7 +90,8 @@
 (define e12-prod (mv* e1 e2))
 (define e21-prod (mv* e2 e1))
 (check "e1*e2 grade-2 blade" (mv-scalar (mv* e12-prod e12-prod)) -1.0)
-(check "e1*e2 = -e2*e1"      (mv-scalar (mv+ e12-prod e21-prod)) 0.0)
+(check-mv= "e1*e2 = e12"         e12-prod e12)
+(check-mv= "e1*e2 = -e2*e1"      e12-prod (mv- e21-prod))
 
 (check-approx "mv-norm e1"  (mv-norm e1)  1.0 1e-12)
 (check-approx "mv-norm e12" (mv-norm e12) 1.0 1e-12)
@@ -100,7 +107,7 @@
 (check-approx "mv-grade 2 norm" (mv-norm (mv-grade mixed 2)) 1.0 1e-12)
 (check-approx "mv-grade 3 norm" (mv-norm (mv-grade mixed 3)) 1.0 1e-12)
 
-(check "mv-reverse e12" (mv-scalar (mv+ e12 (mv-reverse e12))) 0.0)
+(check-mv= "mv-reverse e12 = -e12" (mv-reverse e12) (mv- e12))
 (check-approx "mv-involute e12"  (mv-norm (mv- (mv-involute e12) e12)) 0.0 1e-12)
 (check-approx "mv-involute e1"   (mv-norm (mv+ (mv-involute e1) e1)) 0.0 1e-12)
 (check-approx "mv-conjugate e12" (mv-norm (mv+ (mv-conjugate e12) e12)) 0.0 1e-12)
@@ -174,7 +181,56 @@
        (i (mv-basis sta 1 2 3 4)))
   (check "pseudoscalar^2 = -1 in Cl(1,3,0)" (mv-scalar (mv* i i)) -1.0))
 
-(check-mv= "dual e1 = -e23" (mv-dual e1) (mv- e23))
+;; Left contraction is zero unless the left blade is inside the right one.
+(check-mv= "e1 contract e12 = e2"  (mv-lcontract e1 e12) e2)
+(check-mv= "e2 contract e12 = -e1" (mv-lcontract e2 e12) (mv- e1))
+(check-mv= "e12 contract e1 = 0"   (mv-lcontract e12 e1) (make-multivector g3))
+(check-mv= "e1 contract e2 = 0"    (mv-lcontract e1 e2) (make-multivector g3))
+(check-mv= "e1 contract e1 = 1"    (mv-lcontract e1 e1) one)
+(check-mv= "1 contract e12 = e12"  (mv-lcontract one e12) e12)
+
+;; The dual multiplies by the reverse of the pseudoscalar, -e123 here.
+(check-mv= "dual 1 = -e123"   (mv-dual one) (mv- e123))
+(check-mv= "dual e1 = -e23"   (mv-dual e1) (mv- e23))
+(check-mv= "dual e12 = e3"    (mv-dual e12) e3)
+(check-mv= "dual e123 = 1"    (mv-dual e123) one)
+;; In Cl(3,0,1) the null generator e4 cancels against the pseudoscalar's e4.
+(let ((pga (make-algebra 3 0 1)))
+  (check-mv= "dual e1 = e234 in Cl(3,0,1)" (mv-dual (mv-basis pga 1)) (mv-basis pga 2 3 4))
+  (check-mv= "dual e4 = 0 in Cl(3,0,1)" (mv-dual (mv-basis pga 4)) (make-multivector pga)))
+
+;;; ---------------------------------------------------------------------------
+;;; Zero-skipping and signed zeros, which must match Curry's C code exactly
+
+;; (Not (mv-scale e1 +inf.0): that turns every zero into 0 * inf = NaN.)
+(check-true "scaling by inf makes zeros NaN" (nan? (mv-scalar (mv-scale e1 +inf.0))))
+
+(let* ((a (list->multivector g3 '(-0.0 1.0 0.0 0.0 0.0 0.0 0.0 0.0)))
+       (b (list->multivector g3 '(0.0 +inf.0 0.0 0.0 0.0 0.0 0.0 0.0)))
+       (p (mv* a b)))
+  ;; -0.0 * inf would be NaN, but zero coefficients are skipped.
+  (check-eqv "a -0.0 coefficient is skipped" (multivector-ref p 1) 0.0)
+  (check-eqv "inf survives" (mv-scalar p) +inf.0))
+
+(let ((p (mv* (list->multivector g3 '(+nan.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)) e1)))
+  (check-true "a NaN coefficient is not skipped" (nan? (multivector-ref p 1))))
+
+(check-eqv "negating zero gives -0.0" (mv-scalar (mv- (make-multivector g3))) -0.0)
+(check-eqv "reverse flips the sign of a zero bivector coefficient"
+           (multivector-ref (mv-reverse (make-multivector g3)) 3) -0.0)
+(check-eqv "reverse keeps the sign of a zero vector coefficient"
+           (multivector-ref (mv-reverse (make-multivector g3)) 1) 0.0)
+
+;;; ---------------------------------------------------------------------------
+;;; The largest algebra
+
+(let* ((g16 (make-algebra 16 0 0))
+       (e16 (mv-basis g16 16)))
+  (check "16 generators" (algebra-blade-count g16) 65536)
+  (check "e16^2 = 1" (mv-scalar (mv* e16 e16)) 1.0)
+  (check "e1 e16 = e1,16" (multivector-ref (mv* (mv-basis g16 1) e16) '(1 16)) 1.0)
+  (check "e16 e1 = -e1,16" (multivector-ref (mv* e16 (mv-basis g16 1)) '(1 16)) -1.0))
+(check "8+8 generators" (algebra-generators (make-algebra 8 8 0)) 16)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Algebraic identities on pseudo-random dense multivectors
@@ -226,23 +282,37 @@
   '((2 0 0) (3 0 0) (0 3 0) (1 3 0) (3 0 1) (4 1 0) (2 2 2)))
 
 ;;; ---------------------------------------------------------------------------
-;;; Rotation with a rotor, from Curry's docs/reference/multivec.md
+;;; Rotation with a rotor, after Curry's docs/reference/multivec.md
 
+;; R = cos(h) - sin(h) B, where B = ax e23 + ay e31 + az e12 is the plane
+;; dual to the axis.  e31 = -e13, so the e13 coefficient is +sin(h) ay.
+;; (Curry's docs give it as -sin(h) ay, which turns the y axis the wrong way.)
 (define (make-rotor ax ay az theta)
   (let ((h (/ theta 2.0))
         (m (make-multivector g3)))
     (multivector-set! m 0 (cos h))
     (multivector-set! m #b110 (* (- (sin h)) ax))
-    (multivector-set! m #b101 (* (- (sin h)) ay))
+    (multivector-set! m #b101 (* (sin h) ay))
     (multivector-set! m #b011 (* (- (sin h)) az))
     m))
 
-(let* ((r (make-rotor 0 0 1 (/ (* 4 (atan 1)) 2)))
-       (v (list->multivector g3 '(0.0 1.0 0.0 0.0 0.0 0.0 0.0 0.0)))
-       (w (mv* r v (mv-reverse r))))
-  (check-approx "rotate e1 by 90 degrees about z: e1 part" (multivector-ref w 1) 0.0 1e-12)
-  (check-approx "rotate e1 by 90 degrees about z: e2 part" (multivector-ref w 2) 1.0 1e-12)
-  (check-approx "rotor is unit" (mv-norm2 r) 1.0 1e-12))
+(define quarter-turn (* 2 (atan 1)))
+
+;; Rotate vector v by a quarter turn about axis; return its e1, e2, e3 parts.
+(define (quarter-turn-about axis v)
+  (let* ((r (apply make-rotor (append axis (list quarter-turn))))
+         (w (mv* r v (mv-reverse r))))
+    (list (multivector-ref w 1) (multivector-ref w 2) (multivector-ref w 4))))
+
+(define (check-rotation label actual expected)
+  (report (for-all (lambda (x y) (< (abs (- x y)) 1e-12)) actual expected)
+          label (list 'got actual 'expected expected)))
+
+(check-rotation "about x, e2 turns to e3" (quarter-turn-about '(1 0 0) e2) '(0 0 1))
+(check-rotation "about y, e3 turns to e1" (quarter-turn-about '(0 1 0) e3) '(1 0 0))
+(check-rotation "about y, e1 turns to -e3" (quarter-turn-about '(0 1 0) e1) '(0 0 -1))
+(check-rotation "about z, e1 turns to e2" (quarter-turn-about '(0 0 1) e1) '(0 1 0))
+(check-approx "rotor is unit" (mv-norm2 (make-rotor 0.6 0 0.8 1.0)) 1.0 1e-12)
 
 ;;; ---------------------------------------------------------------------------
 ;;; Errors
@@ -264,6 +334,16 @@
 (check-raises "not a multivector" (lambda () (mv* e1 42)))
 (check-raises "mv-grade non-fixnum" (lambda () (mv-grade e1 1.0)))
 (check-raises "make-multivector without algebra" (lambda () (make-multivector '(3 0 0))))
+(check-raises "set! blade out of range" (lambda () (multivector-set! (make-multivector g3) 8 1.0)))
+(check-raises "mv-scale non-real" (lambda () (mv-scale e1 'x)))
+(check-raises "mv-scale complex" (lambda () (mv-scale e1 1+2i)))
+(check-raises "unary mv+ non-multivector" (lambda () (mv+ 42)))
+(let ((other (mv-basis (make-algebra 2 0 0) 1)))
+  (for-each
+    (lambda (name op)
+      (check-raises (string-append name " with mixed algebras") (lambda () (op e1 other))))
+    '("mv+" "mv-" "mv-wedge" "mv-lcontract")
+    (list mv+ mv- mv-wedge mv-lcontract)))
 
 ;;; ---------------------------------------------------------------------------
 

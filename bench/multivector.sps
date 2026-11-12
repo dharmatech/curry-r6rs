@@ -29,7 +29,7 @@
     (if (< i 0)
         (list->multivector alg acc)
         (loop (- i 1)
-              (cons (let ((c (/ (inexact (+ 1 (mod (+ (* i 7) seed) 11))) 8.0)))
+              (cons (let ((c (/ (inexact (+ 1 (mod (+ (* i 7) seed) 11))) 7.0)))
                       (if (odd? i) (- c) c))
                     acc)))))
 
@@ -52,7 +52,7 @@
          (ax (/ 1.0 len)) (ay (/ 2.0 len)) (az (/ 3.0 len))
          (h 0.35)
          (s (- (sin h)))
-         (r (list->multivector g3 (list (cos h) 0.0 0.0 (* s az) 0.0 (* s ay) (* s ax) 0.0)))
+         (r (list->multivector g3 (list (cos h) 0.0 0.0 (* s az) 0.0 (* (- s) ay) (* s ax) 0.0)))
          (rrev (mv-reverse r)))
     (lambda ()
       (let loop ((i 0) (sum 0.0))
