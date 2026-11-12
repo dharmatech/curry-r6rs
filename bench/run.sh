@@ -4,7 +4,8 @@
 #   bench/run.sh                      # from the repository root
 #   CURRY=/path/to/curry bench/run.sh # use a specific Curry binary
 #
-# Writes bench/results/<date>-<host>.txt and prints it.
+# Writes bench/results/<date>-<host>-<commit>.txt and prints it.  The commit
+# is the code measured; "-dirty" means there were uncommitted changes.
 
 set -eu
 
@@ -13,11 +14,17 @@ cd "$(dirname "$0")/.."
 CHEZ=${CHEZ:-scheme}
 CURRY=${CURRY:-$HOME/src/curry/build-release/curry}
 
+commit=$(git rev-parse --short HEAD)
+if ! git diff --quiet HEAD -- curry-r6rs bench; then
+    commit="$commit-dirty"
+fi
+
 mkdir -p bench/results
-out="bench/results/$(date +%Y-%m-%d)-$(hostname -s).txt"
+out="bench/results/$(date +%Y-%m-%d)-$(hostname -s)-$commit.txt"
 
 {
     echo "# $(date -Iseconds)"
+    echo "# commit: $commit"
     echo "# cpu:   $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || uname -m)"
     echo "# os:    $(uname -sr)"
     echo "# chez:  $($CHEZ --version 2>&1)"
