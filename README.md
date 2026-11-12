@@ -75,10 +75,25 @@ Measured 2026-11-12 on an Intel Core i9-10885H running Linux, at commit `869b9c6
 
 What the numbers say:
 
-- **On a single large product, C is still faster**: 1.3–1.7× at optimize-level 3, 2–3× in Chez's default safe mode. A large product is almost all inner loop. Chez allocates nothing inside it, so the remaining gap is code generation. One specific piece is that Chez compiles R6RS's `fxbit-count` more slowly than its own non-standard `fxpopcount`. In a scratch experiment, swapping one for the other roughly halved the optimize-level 3 times, which suggests a patch to Chez worth investigating.
+- **On a single large product, C is still faster**: 1.3–1.7× at optimize-level 3, 2–3× in Chez's default safe mode. A large product is almost all inner loop. Chez allocates nothing inside it, so the remaining gap is code generation. One specific piece was in Chez itself: R6RS's `fxbit-count` is always an out-of-line procedure call, while Chez's own `fxpopcount` compiles inline. A small patch to Chez closes most of the remaining gap; see below.
 - **The rotor workload is what application code looks like**: build a vector, apply a rotor, read the result, half a million times. Here the portable library on Chez is faster than Curry's C code. Each product is small, so the time goes to the code around it, which Chez compiles to native code while Curry runs it in its bytecode VM with every float allocated on the heap.
 - **The first version was a line-by-line port of Curry's loop**, at commit `d113422`; [its results](bench/results/2026-11-12-X1E-d113422.txt) are kept. That loop branched on effectively random sign bits, which the CPU mispredicts about half the time. The current closed form has no such branches and cut the large products by 40–50%: Cl(8,0,0) went from 4.3 to 2.4 ms in safe mode and from 3.3 to 1.6 ms at optimize-level 3.
 - **C could use the same closed form.** In a quick standalone test, it helped C only with a hardware popcount instruction (`-mpopcnt`), which Curry's default x86-64 build doesn't use; without one, Curry's current loop is the faster choice. A multiplication table precomputed once per algebra would likewise speed up both.
+
+### With `fxbit-count` inlined in Chez
+
+Chez Scheme 10.4.1 compiles `fxbit-count` (R6RS's standard bit count) as a call into a library procedure. Its own non-standard `fxpopcount`, on the other hand, compiles to inline code, a single `POPCNT` instruction on x86-64. The library's blade product counts bits in its innermost loop.
+
+A 22-line patch to Chez inlines `fxbit-count` the same way. Chez's test files for fixnum and bitwise operations pass with it. It lives on the `inline-fxbit-count` branch of a local Chez clone and hasn't been proposed upstream yet. To compare like with like, both Chez builds below come from the same source with the same compiler, and Curry ran in the same sitting. [Raw results](bench/results/2026-11-12-X1E-5cf8b76-chez-fxbit-count.txt).
+
+| Workload, optimize-level 3 | Curry (C) | Chez 10.4.1 | Chez 10.4.1 + patch |
+|---|---|---|---|
+| Geometric product, Cl(3,0,0) | 0.66 µs | 0.84 µs | 0.63 µs (on par with C) |
+| Geometric product, Cl(4,1,0) | 9.3 µs | 17.2 µs | 11.5 µs (1.2× slower than C) |
+| Geometric product, Cl(8,0,0) | 1.15 ms | 1.57 ms | 1.02 ms (1.1× faster than C) |
+| Rotate a vector by a rotor | 1.18 µs | 0.51 µs | 0.42 µs (2.8× faster than C) |
+
+In Chez's default safe mode the patch helps too: 10–22% on the products and 9% on the rotor workload. With it, portable R6RS code on Chez is within about 20% of Curry's hand-written C on every raw product, and matches or beats it on two of the three.
 
 ## Running
 
