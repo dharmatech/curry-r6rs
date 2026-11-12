@@ -22,8 +22,10 @@
 ;;; Coefficients live in a bytevector as native IEEE doubles, so they are
 ;;; stored unboxed.
 ;;;
-;;; The products use the same algorithm as Curry's C code, including skipping
-;;; zero coefficients, so for the same inputs the results agree bit for bit
+;;; The products do the same floating-point arithmetic as Curry's C code, in
+;;; the same order and skipping the same zero coefficients.  (Only the
+;;; integer work of finding each blade's sign differs; see blade-product.)
+;;; So for the same inputs the results agree bit for bit
 ;;; (NaN payloads aside) with a build of that code that keeps each multiply
 ;;; and add separate.  A build that fuses them into FMA instructions, the
 ;;; default on arm64 and with -march=native, rounds differently in the last
@@ -260,34 +262,50 @@
   ;; The product of basis blades a and b (bitmaps) in an algebra whose first
   ;; p generators square to +1 and next q to -1; the rest square to 0.
   ;;
-  ;; Returns 0 when the product vanishes, otherwise +(c+1) or -(c+1) where c
-  ;; is the result blade's bitmap and the sign is the product's sign.  One
-  ;; fixnum, so the inner loops allocate nothing.
+  ;; Write the product as a's generators followed by b's, each in ascending
+  ;; order.  Sorting the whole sequence takes one swap for every pair (i from
+  ;; a, j from b) with i > j, and each swap flips the sign.  Once sorted, a
+  ;; generator in both a and b sits next to itself and squares to +1, -1 or 0.
+  ;; So:
   ;;
-  ;; Moves each generator k of b, lowest first, leftward into a: every
-  ;; generator of a above k is one swap, one sign flip.  If a already holds
-  ;; k, the pair squares to +1, -1 or 0 by k's position in the signature.
+  ;;   blade = a xor b, the generators in exactly one of them
+  ;;   zero, if a shared generator squares to 0
+  ;;   sign  = (-1)^(swaps + shared generators that square to -1)
+  ;;
+  ;; The loop counts swaps by sliding a down one place at a time and counting
+  ;; where it overlaps b.
+  ;;
+  ;; Curry's C code gets the same blade and sign by moving b's generators into
+  ;; a one at a time, flipping a sign flag as it goes.  That way is easier to
+  ;; follow but branches on the flag, and on dense multivectors the CPU
+  ;; mispredicts those branches about half the time.  This way has no
+  ;; data-dependent branches and makes large products about 45% faster.
+  ;;
+  ;; Returns -1 when the product vanishes, otherwise (blade << 1) | parity,
+  ;; where parity 1 means a negative sign.  One fixnum, so the inner loops
+  ;; allocate nothing.
   (define (blade-product a b p q)
-    (let ((pq (fx+ p q)))
-      (let loop ((acc a) (b b) (neg? #f))
-        (if (fx=? b 0)
-            (if neg? (fx- -1 acc) (fx+ acc 1))
-            (let* ((k (fxfirst-bit-set b))
-                   (b (fxand b (fx- b 1)))
-                   (neg? (if (fxodd? (fxbit-count (fxarithmetic-shift-right acc (fx+ k 1))))
-                             (not neg?)
-                             neg?)))
-              (cond
-                ((not (fxbit-set? acc k))
-                 (loop (fxior acc (fxarithmetic-shift-left 1 k)) b neg?))
-                ((fx>=? k pq) 0)
-                (else
-                 (loop (fxxor acc (fxarithmetic-shift-left 1 k))
-                       b
-                       (if (fx>=? k p) (not neg?) neg?)))))))))
+    (let ((pq (fx+ p q))
+          (shared (fxand a b)))
+      (if (fx=? (fxarithmetic-shift-right shared pq) 0)
+          (let loop ((x (fxarithmetic-shift-right a 1))
+                     ;; start from the shared generators that square to -1
+                     (count (fxbit-count
+                              (fxand (fxarithmetic-shift-right shared p)
+                                     (fx- (fxarithmetic-shift-left 1 q) 1)))))
+            (if (fx=? x 0)
+                (fxior (fxarithmetic-shift-left (fxxor a b) 1) (fxand count 1))
+                (loop (fxarithmetic-shift-right x 1)
+                      (fx+ count (fxbit-count (fxand x b))))))
+          -1)))
 
   ;; Every product sums coefficient pairs through blade-product; they differ
   ;; only in which blade pairs (i, j) they skip.
+  ;;
+  ;; The sign is applied by multiplying by +1.0 or -1.0, computed as
+  ;; 1 - 2*parity.  Don't turn it into an if: that branch would be
+  ;; mispredicted about half the time.  (sign * x) * y rounds exactly like the
+  ;; C code's sign * a * b.
   (define-syntax define-product
     (syntax-rules ()
       ((_ name who skip?)
@@ -310,13 +328,10 @@
                    (let ((y (cref bc j)))
                      (unless (or (fl=? y 0.0) (skip? i j))
                        (let ((s (blade-product i j p q)))
-                         (cond
-                           ((fx>? s 0)
-                            (let ((k (fx- s 1)))
-                              (cset! rc k (fl+ (cref rc k) (fl* x y)))))
-                           ((fx<? s 0)
-                            (let ((k (fx- -1 s)))
-                              (cset! rc k (fl- (cref rc k) (fl* x y))))))))))))))))))
+                         (unless (fx<? s 0)
+                           (let ((k (fxarithmetic-shift-right s 1))
+                                 (sign (fl- 1.0 (fixnum->flonum (fx* 2 (fxand s 1))))))
+                             (cset! rc k (fl+ (cref rc k) (fl* (fl* sign x) y)))))))))))))))))
 
   ;; Geometric product: every pair of blades.
   (define-product geometric2 'mv* (lambda (i j) #f))

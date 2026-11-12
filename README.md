@@ -60,7 +60,7 @@ Differences from Curry's built-in version:
 - No quaternion conversions, since R6RS has no quaternion type.
 - No custom printer, since R6RS has no portable way to define one. Use `multivector->list`.
 
-Otherwise the products use the same algorithm as Curry's C code. `tests/differential.sh` runs every operation on both and compares the results exactly, including the sign of zero. They match bit for bit against a Curry built without FMA contraction, which is GCC's x86-64 default. Where the C compiler fuses multiply-adds (arm64, or `-march=native`), the last bit of some results differs. NaN sign and payload also may differ, since IEEE 754 leaves them unspecified.
+Otherwise the products do the same floating-point arithmetic as Curry's C code, in the same order. Only the integer work of finding each blade's sign differs: the C code moves generators one at a time, while this library uses a closed form with no data-dependent branches (see `blade-product`). `tests/differential.sh` runs every operation on both and compares the results exactly, including the sign of zero. They match bit for bit against a Curry built without FMA contraction, which is GCC's x86-64 default. Where the C compiler fuses multiply-adds (arm64, or `-march=native`), the last bit of some results differs. NaN sign and payload also may differ, since IEEE 754 leaves them unspecified.
 
 ## Results
 
