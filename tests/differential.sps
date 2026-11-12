@@ -69,7 +69,9 @@
               (loop (+ k 1))))
           (emit 'mv-norm2 sig kind (list (mv-norm2 a)))
           (emit 'mv-norm sig kind (list (mv-norm a)))
-          (unless (= (mv-norm2 a) 0.0)
+          ;; Not (= n2 0.0) alone: Curry's = is true when either side is
+          ;; NaN.  Both mv-normalizes raise only on exactly zero.
+          (unless (let ((n2 (mv-norm2 a))) (and (not (nan? n2)) (= n2 0.0)))
             (emit-mv 'mv-normalize sig kind (mv-normalize a)))))
       '(dense zeros special)))
   '((1 0 0) (0 1 0) (0 0 1) (2 0 0) (3 0 0) (0 3 0) (1 3 0)
