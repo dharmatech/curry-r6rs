@@ -64,6 +64,8 @@ Otherwise the products do the same floating-point arithmetic as Curry's C code, 
 
 ## Results
 
+[docs/performance/2026-11-12-multivector.md](docs/performance/2026-11-12-multivector.md) is a self-contained write-up of the first table below: method, workloads, and how the gap to C was narrowed.
+
 Measured 2026-11-12 on an Intel Core i9-10885H running Linux, at commit `869b9c6`. Chez Scheme 10.4.1 ran `(curry-r6rs multivector)`; Curry 1.30.1 (Release build, GCC `-O2`, no JIT) ran its built-in C multivectors. Each figure is the best of 5 runs, per operation; repeated runs vary by about 5%. The raw output is in [`bench/results/`](bench/results/). All three runs print identical checksums, and `tests/differential.sh` confirms they compute the same bits.
 
 | Workload | Curry (C) | Chez | Chez, optimize-level 3 |
