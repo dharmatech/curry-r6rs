@@ -86,7 +86,7 @@ What the numbers say:
 
 Chez Scheme 10.4.1 compiles `fxbit-count` (R6RS's standard bit count) as a call into a library procedure. Its own non-standard `fxpopcount`, on the other hand, compiles to inline code, a single `POPCNT` instruction on x86-64. The library's blade product counts bits in its innermost loop.
 
-A 22-line patch to Chez inlines `fxbit-count` the same way. Chez's test files for fixnum and bitwise operations pass with it. It lives on the `inline-fxbit-count` branch of a local Chez clone and hasn't been proposed upstream yet. To compare like with like, both Chez builds below come from the same source with the same compiler, and Curry ran in the same sitting. [Raw results](bench/results/2026-11-12-X1E-5cf8b76-chez-fxbit-count.txt).
+A small patch to Chez inlines `fxbit-count` the same way. It is proposed upstream as [cisco/ChezScheme#1099](https://github.com/cisco/ChezScheme/pull/1099), open as of 2026-11-12. The table below measured an earlier version of the patch, applied to the 10.4.1 release. The pull request has a revised, branch-free version against Chez's development branch; there, the pull request reports Cl(8,0,0) products going from 1.56 ms to 1.09 ms at optimize-level 3. To compare like with like, both Chez builds below come from the same source with the same compiler, and Curry ran in the same sitting. [Raw results](bench/results/2026-11-12-X1E-5cf8b76-chez-fxbit-count.txt).
 
 | Workload, optimize-level 3 | Curry (C) | Chez 10.4.1 | Chez 10.4.1 + patch |
 |---|---|---|---|
