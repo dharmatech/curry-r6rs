@@ -2,6 +2,8 @@
 
 *2026-11-12. Measured at commit `5cf8b76`. [Raw results](../../bench/results/2026-11-12-X1E-5cf8b76-chez-fxbit-count.txt).*
 
+*Update, 2026-11-16: the patch was merged into Chez Scheme's development branch as commit [`0b1659a`](https://github.com/cisco/ChezScheme/commit/0b1659af3cafa41f9566599abe070fb9a6d8589d), and will be in Chez Scheme 10.5.0. The rest of this write-up is unchanged from 2026-11-12.*
+
 This follows [the multivector write-up](2026-11-12-multivector.md) of the same day, with the same library, workloads and machine. The one change is to Chez Scheme itself. Like that write-up, this is a snapshot as of its date.
 
 ## Background

@@ -15,7 +15,7 @@ The question this project explores: does Curry's math code need to be C? If a pl
 On Chez Scheme 10.4.1 at optimize-level 3, `(curry-r6rs multivector)` is 2.4× faster than Curry's C code at rotating vectors, the kind of work application code does. On a single large geometric product, it is 1.2–1.7× slower. Both compute bit-identical results.
 
 - [Multivector library vs Curry's C](docs/performance/2026-11-12-multivector.md) (2026-11-12): method, results, and how the gap to C was narrowed.
-- [With `fxbit-count` inlined in Chez](docs/performance/2026-11-12-chez-fxbit-count.md) (2026-11-12): a proposed Chez patch, [cisco/ChezScheme#1099](https://github.com/cisco/ChezScheme/pull/1099), that brings every product to within 25% of C.
+- [With `fxbit-count` inlined in Chez](docs/performance/2026-11-12-chez-fxbit-count.md) (2026-11-12): a change to Chez, merged for Chez 10.5.0 as [cisco/ChezScheme#1099](https://github.com/cisco/ChezScheme/pull/1099), that brings every product to within 25% of C.
 
 ## Running
 
